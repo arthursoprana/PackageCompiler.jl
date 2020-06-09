@@ -15,17 +15,39 @@ JL_DLLEXPORT char *dirname(char *);
 #include <libgen.h>
 #endif
 
-JULIA_DEFINE_FAST_TLS()
+#define cast_to_char_ptr_ptr(X) ((char**)(X))
 
-// TODO: Windows wmain handling as in repl.c
+JULIA_DEFINE_FAST_TLS()
 
 // Declare C prototype of a function defined in Julia
 int julia_main(jl_array_t*);
 
-// main function (windows UTF16 -> UTF8 argument conversion code copied from julia's ui/repl.c)
+#ifndef _OS_WINDOWS_
 int main(int argc, char *argv[])
 {
     uv_setup_args(argc, argv); // no-op on Windows
+#else
+
+void hide_console_window() {
+    HWND hWnd = GetConsoleWindow();
+    ShowWindow( hWnd, SW_MINIMIZE );
+    ShowWindow( hWnd, SW_HIDE );
+}
+
+int wmain(int argc, wchar_t *argv[], wchar_t *envp[])
+{
+    // write the command line to UTF8
+    for (int i = 0; i < argc; i++) { 
+        wchar_t *warg = argv[i];
+        size_t len = WideCharToMultiByte(CP_UTF8, 0, warg, -1, NULL, 0, NULL, NULL);
+        if (!len) return 1;
+        char *arg = (char*)alloca(len);
+        if (!WideCharToMultiByte(CP_UTF8, 0, warg, -1, arg, len, NULL, NULL)) return 1;
+        argv[i] = (wchar_t*)arg;
+    }
+
+    hide_console_window();
+#endif
 
     // initialization
     libsupport_init();
@@ -49,17 +71,17 @@ int main(int argc, char *argv[])
     julia_init(JL_IMAGE_JULIA_HOME);
 
     // Initialize Core.ARGS with the full argv.
-    jl_set_ARGS(argc, argv);
+    jl_set_ARGS(argc, cast_to_char_ptr_ptr(argv));
 
     // Set PROGRAM_FILE to argv[0].
     jl_set_global(jl_base_module,
-        jl_symbol("PROGRAM_FILE"), (jl_value_t*)jl_cstr_to_string(argv[0]));
+        jl_symbol("PROGRAM_FILE"), (jl_value_t*)jl_cstr_to_string(cast_to_char_ptr_ptr(argv)[0]));
 
     // Set Base.ARGS to `String[ unsafe_string(argv[i]) for i = 1:argc ]`
     jl_array_t *ARGS = (jl_array_t*)jl_get_global(jl_base_module, jl_symbol("ARGS"));
     jl_array_grow_end(ARGS, argc - 1);
     for (int i = 1; i < argc; i++) {
-        jl_value_t *s = (jl_value_t*)jl_cstr_to_string(argv[i]);
+        jl_value_t *s = (jl_value_t*)jl_cstr_to_string(cast_to_char_ptr_ptr(argv)[i]);
         jl_arrayset(ARGS, s, i - 1);
     }
 

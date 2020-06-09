@@ -58,6 +58,9 @@ function cflags()
     if Sys.isunix()
         print(flags, " -fPIC")
     end
+    if Sys.iswindows()
+        print(flags, " -municode")
+    end
     return String(take!(flags))
 end
 
